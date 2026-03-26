@@ -5,6 +5,7 @@ Captura una región de pantalla y la muestra en una ventana compartible en Googl
 """
 
 import sys
+import os
 import mss
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QWidget,
@@ -137,12 +138,12 @@ class MirrorWindow(QMainWindow):
         layout.addWidget(self.hint)
 
         # Área de visualización
-        self.display = QLabel("Selecciona una región y pulsa Iniciar captura")
+        self.display = QLabel()
         self.display.setAlignment(Qt.AlignCenter)
         self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.display.setStyleSheet("background: #111; color: #aaa; border: 1px solid #333;")
-        self.display.setFont(QFont("monospace", 11))
+        self.display.setStyleSheet("background: #111; border: 1px solid #333;")
         layout.addWidget(self.display)
+        self._show_splash()
 
         # Barra de estado inferior
         self.status = QLabel(f"Región: {self.region}")
@@ -196,6 +197,17 @@ class MirrorWindow(QMainWindow):
         if self.capturing:
             self.timer.setInterval(1000 // val)
 
+    def _show_splash(self):
+        base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+        icon_path = os.path.join(base, "roda_mirror.png")
+        if os.path.exists(icon_path):
+            pix = QPixmap(icon_path).scaled(220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.display.setPixmap(pix)
+            self.display.setText("")
+        else:
+            self.display.setText("Selecciona una región y pulsa Iniciar captura")
+            self.display.setStyleSheet("background: #111; color: #aaa; border: 1px solid #333;")
+
     def toggle_capture(self):
         if self.btn_toggle.isChecked():
             self.capturing = True
@@ -208,6 +220,7 @@ class MirrorWindow(QMainWindow):
             self.btn_toggle.setText("▶ Iniciar captura")
             self.timer.stop()
             self._exit_frameless()
+            self._show_splash()
 
     def _enter_frameless(self):
         self.toolbar.hide()
