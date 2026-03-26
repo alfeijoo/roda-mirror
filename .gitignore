@@ -1,0 +1,11 @@
+dist/
+build/
+*.spec
+AppDir/
+appimagetool
+*.AppImage
+__pycache__/
+*.py[cod]
+*.bk
+.DS_Store
+Thumbs.db
