@@ -137,12 +137,33 @@ class MirrorWindow(QMainWindow):
         )
         layout.addWidget(self.hint)
 
-        # Área de visualización
+        # Área de visualización — contenedor con icono + texto splash o captura
+        self.display_container = QWidget()
+        self.display_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.display_container.setStyleSheet("background: #111; border: none;")
+        display_layout = QVBoxLayout(self.display_container)
+        display_layout.setAlignment(Qt.AlignCenter)
+        display_layout.setSpacing(10)
+        display_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.splash_icon = QLabel()
+        self.splash_icon.setAlignment(Qt.AlignCenter)
+        display_layout.addWidget(self.splash_icon)
+
+        self.splash_text = QLabel("Selecciona una región y pulsa Iniciar captura")
+        self.splash_text.setAlignment(Qt.AlignCenter)
+        self.splash_text.setStyleSheet("color: #aaa; font-size: 12px; font-family: monospace; background: transparent; border: none;")
+        display_layout.addWidget(self.splash_text)
+
+        # QLabel para mostrar los frames de captura (oculto en splash)
         self.display = QLabel()
         self.display.setAlignment(Qt.AlignCenter)
         self.display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.display.setStyleSheet("background: #111; border: 1px solid #333;")
-        layout.addWidget(self.display)
+        self.display.setStyleSheet("background: #111; border: none;")
+        self.display.hide()
+        display_layout.addWidget(self.display)
+
+        layout.addWidget(self.display_container)
         self._show_splash()
 
         # Barra de estado inferior
@@ -202,11 +223,11 @@ class MirrorWindow(QMainWindow):
         icon_path = os.path.join(base, "roda_mirror.png")
         if os.path.exists(icon_path):
             pix = QPixmap(icon_path).scaled(220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.display.setPixmap(pix)
-            self.display.setText("")
-        else:
-            self.display.setText("Selecciona una región y pulsa Iniciar captura")
-            self.display.setStyleSheet("background: #111; color: #aaa; border: 1px solid #333;")
+            self.splash_icon.setPixmap(pix)
+        self.splash_icon.show()
+        self.splash_text.show()
+        self.display.hide()
+        self.display_container.setStyleSheet("background: #111; border: none;")
 
     def toggle_capture(self):
         if self.btn_toggle.isChecked():
@@ -226,9 +247,12 @@ class MirrorWindow(QMainWindow):
         self.toolbar.hide()
         self.hint.hide()
         self.status.hide()
+        self.splash_icon.hide()
+        self.splash_text.hide()
+        self.display.show()
         self.centralWidget().layout().setContentsMargins(0, 0, 0, 0)
         self.centralWidget().layout().setSpacing(0)
-        self.display.setStyleSheet("background: black; border: none;")
+        self.display_container.setStyleSheet("background: black; border: none;")
         r = self.region
         aspect = r["width"] / r["height"] if r["height"] else 16/9
         new_h = int(self.width() / aspect)
@@ -237,7 +261,6 @@ class MirrorWindow(QMainWindow):
     def _exit_frameless(self):
         self.centralWidget().layout().setContentsMargins(8, 8, 8, 8)
         self.centralWidget().layout().setSpacing(8)
-        self.display.setStyleSheet("background: #111; color: #aaa; border: 1px solid #333;")
         self.toolbar.show()
         self.hint.show()
         self.status.show()
@@ -252,9 +275,7 @@ class MirrorWindow(QMainWindow):
     def capture_frame(self):
         try:
             shot = self.sct.grab(self.region)
-            # Convertir BGRA → RGB para compatibilidad con versiones antiguas de PyQt5
             from PIL import Image
-            import io
             pil_img = Image.frombytes("RGBA", (shot.width, shot.height), shot.raw, "raw", "BGRA")
             pil_rgb = pil_img.convert("RGB")
             data = pil_rgb.tobytes()
