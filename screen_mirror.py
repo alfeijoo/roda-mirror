@@ -127,6 +127,15 @@ class MirrorWindow(QMainWindow):
 
         layout.addWidget(self.toolbar)
 
+        # Aviso de flujo correcto
+        self.hint = QLabel("💡 Pulsa Iniciar captura y luego selecciona esta ventana en Google Meet para compartir")
+        self.hint.setAlignment(Qt.AlignCenter)
+        self.hint.setStyleSheet(
+            "background: #2a1f00; color: #ffcc44; font-size: 11px; "
+            "padding: 5px; border: 1px solid #ffcc44;"
+        )
+        layout.addWidget(self.hint)
+
         # Área de visualización
         self.display = QLabel("Selecciona una región y pulsa Iniciar captura")
         self.display.setAlignment(Qt.AlignCenter)
@@ -202,25 +211,23 @@ class MirrorWindow(QMainWindow):
 
     def _enter_frameless(self):
         self.toolbar.hide()
+        self.hint.hide()
         self.status.hide()
         self.centralWidget().layout().setContentsMargins(0, 0, 0, 0)
         self.centralWidget().layout().setSpacing(0)
         self.display.setStyleSheet("background: black; border: none;")
-        self.setWindowFlag(Qt.FramelessWindowHint, True)
         r = self.region
         aspect = r["width"] / r["height"] if r["height"] else 16/9
         new_h = int(self.width() / aspect)
         self.resize(self.width(), new_h)
-        self.show()
 
     def _exit_frameless(self):
-        self.setWindowFlag(Qt.FramelessWindowHint, False)
         self.centralWidget().layout().setContentsMargins(8, 8, 8, 8)
         self.centralWidget().layout().setSpacing(8)
         self.display.setStyleSheet("background: #111; color: #aaa; border: 1px solid #333;")
         self.toolbar.show()
+        self.hint.show()
         self.status.show()
-        self.show()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.capturing:
