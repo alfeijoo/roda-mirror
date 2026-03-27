@@ -20,6 +20,7 @@ Dependencias:
 
 import sys
 import os
+import math
 import subprocess
 import mss
 from PyQt5.QtWidgets import (
@@ -27,8 +28,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QSizePolicy,
     QMenuBar, QMenu, QAction, QWidgetAction, QCheckBox
 )
-from PyQt5.QtCore import Qt, QTimer, QRect
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QFont, QIcon
+from PyQt5.QtCore import Qt, QTimer, QRect, QPointF
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QFont, QIcon, QPen, QPainterPath
 
 # ── Configuración por defecto ──────────────────────────────────────────────────
 # Región inicial: pantalla completa 1920x1080. Se sobreescribe cuando el usuario
@@ -38,6 +39,99 @@ DEFAULT_REGION = {"left": 0, "top": 0, "width": 1920, "height": 1080}
 # Frecuencia de refresco por defecto en fotogramas por segundo.
 # A 15 FPS el timer dispara capture_frame cada 66ms.
 FPS = 15
+
+
+class OceanBackground(QWidget):
+    """
+    Widget de fondo animado con líneas de nivel tipo batimetría oceánica.
+    Se usa como fondo del área de splash (estado de reposo).
+
+    Pinta una serie de líneas onduladas que se desplazan horizontalmente
+    a distintas velocidades, creando efecto de profundidad oceánica.
+    Los colores van del verde muy oscuro en la parte inferior al
+    verde-azulado más claro en la parte superior.
+
+    La animación se controla con un QTimer interno que actualiza
+    el offset de cada línea y fuerza un repintado.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Offset de tiempo acumulado — avanza en cada tick del timer
+        self._t = 0.0
+        # Timer de animación: 40ms ≈ 25 FPS, suficiente para una animación suave
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._tick)
+        self._anim_timer.start(40)
+
+        # Definición de las líneas: (posición Y relativa 0..1, color hex, velocidad, amplitud)
+        self._lines = [
+            (0.08,  "#0d4a42", 0.15, 0.018),
+            (0.17,  "#0d5548", 0.22, 0.020),
+            (0.26,  "#0e6050", 0.18, 0.022),
+            (0.35,  "#0f6a58", 0.25, 0.019),
+            (0.44,  "#107560", 0.20, 0.024),
+            (0.53,  "#128068", 0.28, 0.021),
+            (0.62,  "#148c72", 0.17, 0.026),
+            (0.72,  "#169878", 0.23, 0.023),
+            (0.83,  "#18a47e", 0.30, 0.025),
+        ]
+
+    def _tick(self):
+        """Avanza el tiempo de animación y fuerza un repintado."""
+        self._t += 0.03
+        self.update()
+
+    def stop_animation(self):
+        """Para el timer de animación (se llama al entrar en modo captura)."""
+        self._anim_timer.stop()
+
+    def start_animation(self):
+        """Reanuda el timer de animación (se llama al volver al splash)."""
+        self._anim_timer.start(40)
+
+    def paintEvent(self, event):
+        """
+        Pinta el fondo negro y las líneas de nivel onduladas.
+        Cada línea es un path de puntos calculado con una función seno
+        con fase y velocidad distintas para dar sensación de movimiento independiente.
+        """
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+
+        # Fondo negro azulado
+        painter.fillRect(self.rect(), QColor("#071a1a"))
+
+        # Número de puntos por línea — más puntos = curva más suave
+        steps = 80
+
+        for i, (y_rel, color_hex, speed, amplitude) in enumerate(self._lines):
+            y_base = y_rel * h
+            # Fase única por línea para que se muevan de forma independiente
+            phase = self._t * speed + i * 0.8
+
+            pen = QPen(QColor(color_hex))
+            pen.setWidthF(1.4)
+            pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(pen)
+
+            path = QPainterPath()
+            for step in range(steps + 1):
+                x = w * step / steps
+                # Suma de dos senos con frecuencias distintas para ondas más orgánicas
+                y = y_base + math.sin(x / w * 2 * math.pi * 2 + phase) * h * amplitude \
+                            + math.sin(x / w * 2 * math.pi * 3.3 + phase * 1.4) * h * amplitude * 0.4
+                if step == 0:
+                    path.moveTo(QPointF(x, y))
+                else:
+                    path.lineTo(QPointF(x, y))
+
+            painter.drawPath(path)
+
+        painter.end()
 
 
 class OverlaySelector(QWidget):
@@ -261,12 +355,11 @@ class MirrorWindow(QMainWindow):
         layout.addWidget(self.hint)
 
         # ── Área de visualización ──────────────────────────────────────────────
-        # Contenedor que alberga dos estados mutuamente excluyentes:
-        #   - Splash (icono + texto): visible cuando no hay captura activa
-        #   - Display (frames en vivo): visible durante la captura
-        self.display_container = QWidget()
+        # OceanBackground pinta las líneas de nivel animadas como fondo del splash.
+        # Encima se superponen el icono PNG y el texto en modo reposo,
+        # o los frames capturados durante la captura activa.
+        self.display_container = OceanBackground()
         self.display_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.display_container.setStyleSheet("background: #111; border: none;")
         display_layout = QVBoxLayout(self.display_container)
         display_layout.setAlignment(Qt.AlignCenter)
         display_layout.setSpacing(10)
@@ -443,8 +536,8 @@ class MirrorWindow(QMainWindow):
             self.splash_icon.setPixmap(pix)
         self.splash_icon.show()
         self.splash_text.show()
-        self.display.hide()  # oculta el área de frames — no hay captura activa
-        self.display_container.setStyleSheet("background: #111; border: none;")
+        self.display.hide()
+        self.display_container.start_animation()
 
     def toggle_capture(self):
         """
@@ -499,16 +592,15 @@ class MirrorWindow(QMainWindow):
         self.status.hide()
         self.splash_icon.hide()
         self.splash_text.hide()
-        self.menuBar().hide()  # oculta el menú de configuración durante la captura
+        self.menuBar().hide()
+        self.display_container.stop_animation()  # para la animación para no gastar CPU durante captura
         self.display.show()
-        # Quita márgenes para que el frame ocupe todo el espacio disponible
         self.centralWidget().layout().setContentsMargins(0, 0, 0, 0)
         self.centralWidget().layout().setSpacing(0)
         self.display_container.layout().setContentsMargins(0, 0, 0, 0)
         self.display_container.layout().setSpacing(0)
-        self.display_container.setStyleSheet("background: black; border: none;")
+        self.display_container.setStyleSheet("background: black;")
         self.display.setStyleSheet("background: black; border: none;")
-        # Calcula el alto correcto manteniendo el aspect ratio de la región
         r = self.region
         aspect = r["width"] / r["height"] if r["height"] else 16/9
         new_h = int(self.width() / aspect)
@@ -523,6 +615,8 @@ class MirrorWindow(QMainWindow):
         """
         self.centralWidget().layout().setContentsMargins(8, 8, 8, 8)
         self.centralWidget().layout().setSpacing(8)
+        self.display_container.setStyleSheet("")  # elimina el fondo negro de la captura
+        self.display.setStyleSheet("")            # limpia el estilo del área de frames
         self.menuBar().show()
         self.toolbar.show()
         self.hint.show()
