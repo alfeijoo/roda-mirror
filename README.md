@@ -24,6 +24,10 @@ It was built for situations where you need to work across two things at once (a 
 
 That's it. Your audience sees the mirrored region. You keep working freely on the rest of your screen.
 
+<p align="center">
+  <img src="images/rodamirror-1.1.2.png" width="700"/>
+</p>
+
 ---
 
 ## Technical overview
