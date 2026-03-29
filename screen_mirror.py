@@ -589,8 +589,17 @@ class MirrorWindow(QMainWindow):
         self.display_container.setStyleSheet("background: black;")
         self.display.setStyleSheet("background: black; border: none;")
         r = self.region
-        aspect = r["width"] / r["height"] if r["height"] else 16/9
-        self.resize(self.width(), int(self.width() / aspect))
+        aspect = r["width"] / r["height"] if r["height"] else 16 / 9
+        avail = QApplication.primaryScreen().availableGeometry()
+        title_bar_h = self.frameGeometry().height() - self.height()
+        max_h = avail.height() - title_bar_h
+
+        w = self.width()
+        h = int(w / aspect)
+        if h > max_h:
+            h = max_h
+            w = int(h * aspect)
+        self.resize(w, h)
 
     def _exit_frameless(self):
         self.centralWidget().layout().setContentsMargins(8, 8, 8, 8)
