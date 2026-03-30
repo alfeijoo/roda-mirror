@@ -29,7 +29,7 @@ import mss
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QWidget,
     QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QSizePolicy,
-    QCheckBox, QMenu, QAction, QWidgetAction, QActionGroup
+    QCheckBox, QMenu, QAction, QWidgetAction, QActionGroup, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer, QRect, QPointF
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QIcon, QPen, QPainterPath
@@ -64,6 +64,13 @@ STRINGS = {
         "splash_text":   "Selecciona una región y pulsa Iniciar captura",
         "status_region": "Región: x={left} y={top}  {width}×{height}px",
         "status_error":  "Error captura: {error}",
+        "stop_key_menu":         "Tecla de parada: {key}",
+        "stop_key_dialog_title": "Cambiar tecla de parada",
+        "stop_key_dialog_msg":   "Pulsa cualquier tecla…",
+        "stop_key_captured":     "Tecla seleccionada: {key}",
+        "stop_key_btn_accept":   "Aceptar",
+        "stop_key_btn_recapture":"Volver a capturar",
+        "stop_key_btn_cancel":   "Cancelar",
     },
     "en": {
         "window_title":  "Roda Mirroring",
@@ -92,6 +99,13 @@ STRINGS = {
         "splash_text":   "Select a region and press Start capture",
         "status_region": "Region: x={left} y={top}  {width}×{height}px",
         "status_error":  "Capture error: {error}",
+        "stop_key_menu":         "Stop key: {key}",
+        "stop_key_dialog_title": "Change stop key",
+        "stop_key_dialog_msg":   "Press any key…",
+        "stop_key_captured":     "Selected key: {key}",
+        "stop_key_btn_accept":   "Accept",
+        "stop_key_btn_recapture":"Capture again",
+        "stop_key_btn_cancel":   "Cancel",
     },
 }
 
@@ -230,6 +244,57 @@ class OverlaySelector(QWidget):
             self.on_confirm(region)
 
 
+class KeyCaptureDialog(QDialog):
+    """Diálogo para capturar y confirmar una tecla de parada."""
+
+    def __init__(self, parent, strings):
+        super().__init__(parent)
+        self.captured_key = None
+        self._strings = strings
+        self.setWindowTitle(strings["stop_key_dialog_title"])
+        self.setModal(True)
+        self.setFixedSize(300, 130)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        self._label = QLabel(strings["stop_key_dialog_msg"])
+        self._label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._label)
+
+        btn_row = QHBoxLayout()
+        self._btn_accept = QPushButton(strings["stop_key_btn_accept"])
+        self._btn_recapture = QPushButton(strings["stop_key_btn_recapture"])
+        self._btn_cancel = QPushButton(strings["stop_key_btn_cancel"])
+        self._btn_accept.setEnabled(False)
+        self._btn_recapture.setEnabled(False)
+        self._btn_accept.clicked.connect(self.accept)
+        self._btn_recapture.clicked.connect(self._reset)
+        self._btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(self._btn_accept)
+        btn_row.addWidget(self._btn_recapture)
+        btn_row.addWidget(self._btn_cancel)
+        layout.addLayout(btn_row)
+
+    def _reset(self):
+        self.captured_key = None
+        self._label.setText(self._strings["stop_key_dialog_msg"])
+        self._btn_accept.setEnabled(False)
+        self._btn_recapture.setEnabled(False)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (Qt.Key_unknown, Qt.Key_Control, Qt.Key_Shift,
+                   Qt.Key_Alt, Qt.Key_Meta, Qt.Key_Super_L, Qt.Key_Super_R):
+            return
+        from PyQt5.QtGui import QKeySequence
+        key_name = QKeySequence(key).toString() or str(key)
+        self.captured_key = key
+        self._label.setText(self._strings["stop_key_captured"].format(key=key_name))
+        self._btn_accept.setEnabled(True)
+        self._btn_recapture.setEnabled(True)
+
+
 class MirrorWindow(QMainWindow):
     """Ventana principal de la aplicación."""
 
@@ -239,7 +304,9 @@ class MirrorWindow(QMainWindow):
         self.sct = mss.mss()
         self.selector = None
         self._lang = _detect_lang()
-        self._default_region_key = self._load_config().get("default_region", "right")
+        cfg = self._load_config()
+        self._default_region_key = cfg.get("default_region", "right")
+        self._stop_key = cfg.get("stop_key", Qt.Key_Escape)
         self.region = self._compute_preset(self._default_region_key)
 
         self._original_banners = self._read_banners_state()
@@ -358,6 +425,13 @@ class MirrorWindow(QMainWindow):
         self.lang_menu.addAction(self.act_en)
         (self.act_es if self._lang == "es" else self.act_en).setChecked(True)
 
+        self._settings_menu.addSeparator()
+
+        # Acción para cambiar la tecla de parada
+        self.act_stop_key = QAction(self._stop_key_label(), self)
+        self.act_stop_key.triggered.connect(self._change_stop_key)
+        self._settings_menu.addAction(self.act_stop_key)
+
         # ── Aviso de uso ───────────────────────────────────────────────────────
         self.hint = QLabel(self._s("hint"))
         self.hint.setAlignment(Qt.AlignCenter)
@@ -446,6 +520,7 @@ class MirrorWindow(QMainWindow):
             self._default_region_actions[key].setText(self._s(str_key))
         self.lang_menu.setTitle(self._s("submenu_lang"))
         (self.act_es if self._lang == "es" else self.act_en).setChecked(True)
+        self.act_stop_key.setText(self._stop_key_label())
         self._update_status()
 
     # ── No Molestar ────────────────────────────────────────────────────────────
@@ -473,7 +548,27 @@ class MirrorWindow(QMainWindow):
     # ── Controles ──────────────────────────────────────────────────────────────
 
     def get_primary_screen_geom(self):
-        return QApplication.primaryScreen().geometry()
+        screen = QApplication.primaryScreen()
+        geom = screen.geometry()
+        try:
+            result = subprocess.run(
+                ['xprop', '-root', '_NET_WORKAREA'],
+                capture_output=True, text=True, timeout=1
+            )
+            if result.returncode == 0 and '=' in result.stdout:
+                vals = [int(v.strip()) for v in result.stdout.split('=')[1].split(',')]
+                wa_x, wa_y, wa_w, wa_h = vals[0], vals[1], vals[2], vals[3]
+                sx, sy = geom.x(), geom.y()
+                sw, sh = geom.width(), geom.height()
+                ix = max(sx, wa_x)
+                iy = max(sy, wa_y)
+                iw = min(sx + sw, wa_x + wa_w) - ix
+                ih = min(sy + sh, wa_y + wa_h) - iy
+                if iw > 0 and ih > 0:
+                    return QRect(ix, iy, iw, ih)
+        except Exception:
+            pass
+        return screen.availableGeometry()
 
     def set_left_half(self):
         self.region = self._compute_preset("left")
@@ -525,9 +620,24 @@ class MirrorWindow(QMainWindow):
         try:
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
-                json.dump({"default_region": self._default_region_key}, f)
+                json.dump({
+                    "default_region": self._default_region_key,
+                    "stop_key": self._stop_key,
+                }, f)
         except Exception:
             pass
+
+    def _stop_key_label(self):
+        from PyQt5.QtGui import QKeySequence
+        key_name = QKeySequence(self._stop_key).toString() or str(self._stop_key)
+        return self._s("stop_key_menu").format(key=key_name)
+
+    def _change_stop_key(self):
+        dlg = KeyCaptureDialog(self, STRINGS[self._lang])
+        if dlg.exec_() == QDialog.Accepted and dlg.captured_key is not None:
+            self._stop_key = dlg.captured_key
+            self.act_stop_key.setText(self._stop_key_label())
+            self._save_config()
 
     def start_selection(self):
         if self.capturing:
@@ -611,7 +721,7 @@ class MirrorWindow(QMainWindow):
         self.status.show()
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape and self.capturing:
+        if event.key() == self._stop_key and self.capturing:
             self.btn_toggle.setChecked(False)
             self.toggle_capture()
 

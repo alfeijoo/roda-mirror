@@ -18,15 +18,29 @@ It was built for situations where you need to work across two things at once (a 
 
 ## How it works
 
-1. **Select a region** — choose the left half, right half, or draw a custom area with your mouse
+1. **Select a region** — choose left, right, top or bottom half, or draw a custom area with your mouse
 2. **Start capture** — the app begins mirroring that region in real time inside its own window
 3. **Share in Google Meet** — go to Present → A window → select **Roda Mirror**
 
 That's it. Your audience sees the mirrored region. You keep working freely on the rest of your screen.
 
 <p align="center">
-  <img src="images/rodamirror-1.1.2.png" width="700"/>
+  <img src="images/rodamirror-1.2.0..png" width="700"/>
 </p>
+
+---
+
+## Features
+
+- **Region presets** — left half, right half, top half, bottom half, or custom selection with the mouse
+- **Taskbar-aware** — preset regions automatically exclude the system taskbar, regardless of its position
+- **Configurable default region** — choose which preset is active on startup; saved across sessions
+- **Configurable stop key** — press any key to stop capture; defaults to Esc, fully customisable from settings
+- **Do Not Disturb** — suppresses system notifications while capture is active; restores original state on exit
+- **Spanish / English** — language auto-detected from system locale; switchable at any time from settings
+- **Settings gear button** — all options accessible from a native dropdown menu (⚙), no menu bar
+- **FPS control** — adjustable capture rate from 5 to 30 FPS
+- **No installation** — distributed as a self-contained AppImage
 
 ---
 
@@ -53,6 +67,8 @@ X11 returns pixel data in BGRA format (Blue, Green, Red, Alpha). PyQt5's `QImage
 
 The custom region selector is an `OverlaySelector` widget — a fullscreen, semi-transparent, frameless window that sits on top of everything (`Qt.WindowStaysOnTopHint`). It captures mouse press, move and release events to define a `QRect`, then passes the screen coordinates back to the main window.
 
+Preset regions are computed from the screen's available geometry (excluding the taskbar) by reading `_NET_WORKAREA` directly from the X11 root window via `xprop`, which is more reliable than Qt's `availableGeometry()` on some Linux desktop environments.
+
 ### Window sharing in Google Meet
 
 Google Meet on Chrome (X11) enumerates visible windows via the XDG screen capture protocol or directly through X11's window tree. Roda Mirror maintains a standard decorated window (with title bar) so it remains visible and selectable in Meet's window picker at all times — including after capture has started.
@@ -65,6 +81,7 @@ Google Meet on Chrome (X11) enumerates visible windows via the XDG screen captur
 | `Pillow` | BGRA → RGB pixel buffer conversion |
 | `PyQt5` | GUI, window management, render loop via QTimer |
 | `QLabel + QPixmap` | Efficient pixel buffer display |
+| `xprop` | Reads `_NET_WORKAREA` to exclude taskbar from preset regions |
 | `PyInstaller` | Bundles Python + dependencies into a single binary |
 | `appimagetool` | Packages the binary into a portable AppImage |
 
@@ -73,6 +90,7 @@ Google Meet on Chrome (X11) enumerates visible windows via the XDG screen captur
 ## Requirements
 
 - Linux x86_64
+- X11 display server (Wayland not supported)
 - Python 3
 - PyQt5, mss, pillow
 
